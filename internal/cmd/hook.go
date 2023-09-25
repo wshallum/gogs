@@ -14,7 +14,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/tv42/httpunix"
 	"github.com/unknwon/com"
 	"github.com/urfave/cli"
 	log "unknwon.dev/clog/v2"
@@ -238,10 +240,22 @@ func runHookPostReceive(c *cli.Context) error {
 		reqURL := fmt.Sprintf("%s%s/%s/tasks/trigger?%s", conf.Server.LocalRootURL, options.RepoUserName, options.RepoName, q.Encode())
 		log.Trace("Trigger task: %s", reqURL)
 
-		resp, err := httplib.Get(reqURL).
+		req := httplib.Get(reqURL).
 			SetTLSClientConfig(&tls.Config{
 				InsecureSkipVerify: true,
-			}).Response()
+			})
+
+		if strings.Index(reqURL, "http+unix:/") == 0 {
+			var httpunixTransport = &httpunix.Transport{
+				DialTimeout:           1 * time.Second,
+				RequestTimeout:        30 * time.Second,
+				ResponseHeaderTimeout: 30 * time.Second,
+			}
+			httpunixTransport.RegisterLocation("gogs", conf.Server.HTTPAddr)
+			req = req.SetTransport(httpunixTransport)
+		}
+
+		resp, err := req.Response()
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode/100 != 2 {
